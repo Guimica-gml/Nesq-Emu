@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <errno.h>
 
+#define ARENA_IMPLEMENTATION
+#include "./arena.h"
+
 #define FILEPATH "./roms/super-mario-bros.nes"
 
 #define array_len(arr) sizeof(arr) / sizeof((arr)[0])
@@ -19,6 +22,9 @@ typedef struct {
     bool battery;
 } Cartridge;
 
+typedef struct {
+} NES;
+
 void read_bytes(void *buffer, size_t count, FILE *stream) {
     size_t read = fread(buffer, sizeof(char), count, stream);
     if (read != count) {
@@ -33,7 +39,7 @@ byte read_byte(FILE *stream) {
     return byte;
 }
 
-Cartridge cartridge_from_ines_file(const char *filepath) {
+Cartridge cartridge_from_ines_file(const char *filepath, Arena *arena) {
     FILE *file = fopen(filepath, "rb");
     if (file == NULL) {
         fprintf(stderr, "Error: could not open `%s`: %s\n", filepath, strerror(errno));
@@ -101,9 +107,9 @@ Cartridge cartridge_from_ines_file(const char *filepath) {
     size_t prg_size = prg_rom_size * 16384;
     size_t chr_size = chr_rom_size * 8192;
 
-    byte *prg_rom = malloc(prg_size);
-    byte *chr_rom = malloc(chr_size);
-    byte *sram = malloc(8192);
+    byte *prg_rom = arena_alloc(arena, prg_size);
+    byte *chr_rom = arena_alloc(arena, chr_size);
+    byte *sram = arena_alloc(arena, 8192);
 
     read_bytes(prg_rom, prg_size, file);
     read_bytes(chr_rom, chr_size, file);
@@ -123,15 +129,12 @@ Cartridge cartridge_from_ines_file(const char *filepath) {
     return c;
 }
 
-void cartridge_free(Cartridge *c) {
-    free(c->prg);
-    free(c->chr);
-    free(c->sram);
-}
-
 int main(void) {
-    Cartridge cartridge = cartridge_from_ines_file(FILEPATH);
-    // Now what do I do with all this?
-    cartridge_free(&cartridge);
+    Arena arena = { 0 };
+    Cartridge cartridge = cartridge_from_ines_file(FILEPATH, &arena);
+
+    // What now?
+
+    arena_free(&arena);
     return 0;
 }
