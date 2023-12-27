@@ -4,7 +4,20 @@
 #include <stdbool.h>
 #include <errno.h>
 
+#define FILEPATH "./roms/super-mario-bros.nes"
+
+#define array_len(arr) sizeof(arr) / sizeof((arr)[0])
+
 typedef unsigned char byte;
+
+typedef struct {
+    byte *prg;
+    byte *chr;
+    byte *sram;
+    byte mapper;
+    byte mirror;
+    bool battery;
+} Cartridge;
 
 void read_bytes(void *buffer, size_t count, FILE *stream) {
     size_t read = fread(buffer, sizeof(char), count, stream);
@@ -20,21 +33,19 @@ byte read_byte(FILE *stream) {
     return byte;
 }
 
-#define FILEPATH "./roms/super-mario-bros.nes"
-#define MAGIC_SIZE 4
-
-int main(void) {
-    FILE *file = fopen(FILEPATH, "rb");
+Cartridge cartridge_from_ines_file(const char *filepath) {
+    FILE *file = fopen(filepath, "rb");
     if (file == NULL) {
-        fprintf(stderr, "Error: could not open `%s`: %s\n", FILEPATH, strerror(errno));
+        fprintf(stderr, "Error: could not open `%s`: %s\n", filepath, strerror(errno));
         exit(1);
     }
 
-    byte expected_magic[MAGIC_SIZE] = { 'N', 'E', 'S', 0x1A };
-    byte magic[MAGIC_SIZE];
-    read_bytes(magic, MAGIC_SIZE, file);
+    byte expected_magic[] = { 'N', 'E', 'S', 0x1A };
+    const size_t magic_size = array_len(expected_magic);
+    byte magic[magic_size];
+    read_bytes(magic, magic_size, file);
 
-    if (memcmp(magic, expected_magic, MAGIC_SIZE) != 0) {
+    if (memcmp(magic, expected_magic, magic_size) != 0) {
         fprintf(stderr, "Error: file is not valid nes format!\n");
         exit(1);
     }
@@ -42,12 +53,11 @@ int main(void) {
     byte prg_rom_size = read_byte(file);
     byte chr_rom_size = read_byte(file);
 
-    // NOTE(nic): ignoring the third bit, because
-    // I don't know what the trainer is yet
     byte flag_06 = read_byte(file);
-    byte mirroring = flag_06 & 0x01;
-    bool contains_prg_ram = (flag_06 & 0x02) != 0;
-    bool four_screen_vram = (flag_06 & 0x08) != 0;
+    byte mirroring_arrangement = flag_06 & 0x01;
+    bool contains_battery_backed_ram = (flag_06 & 0x02) != 0;
+    bool contains_trainer = (flag_06 & 0x04) != 0;
+    byte four_screen_vram = (flag_06 & 0x08);
     byte lower_nybble_mapper = flag_06 & 0xF0;
 
     // NOTE(nic): we are ignoring the first 2 bits of the flag
@@ -61,8 +71,9 @@ int main(void) {
         exit(1);
     }
 
-    // NOTE(nic): even if zero, still means we have 8KB reserved for it
-    byte flag_08 = read_byte(file); // PRG RAM size
+    // NOTE(nic): PRG RAM size, ignoring it for now
+    // even if zero, still means we have 8KB reserved for it
+    (void) read_byte(file);
 
     // NOTE(nic): I really don't want to deal with flags 9 and 10
     (void) read_byte(file);
@@ -76,22 +87,51 @@ int main(void) {
     read_bytes(padding, pad_size, file);
 
     if (memcmp(padding, expected_padding, pad_size) != 0) {
-        fprintf(stderr, "Error: padding is not respected!\n");
+        fprintf(stderr, "Error: zero padding is not respected in file!\n");
         exit(1);
     }
 
-    byte mapper = ((lower_nybble_mapper >> 4) | upper_nybble_mapper);
+    // Reading trainer if present, ignoring it for now
+    if (contains_trainer) {
+        const size_t trainer_size = 512;
+        byte trainer[trainer_size];
+        read_bytes(&trainer, trainer_size, file);
+    }
 
-    printf("Prg_Rom_Size: %d (* 16KB = %dKB)\n", prg_rom_size, prg_rom_size * 16);
-    printf("Chr_Rom_Size: %d (* 8KB = %dKB)\n", chr_rom_size, chr_rom_size * 8);
-    printf("Prg_Ram_Size: %d (8KB even if zero)\n", flag_08);
+    size_t prg_size = prg_rom_size * 16384;
+    size_t chr_size = chr_rom_size * 8192;
 
-    printf("Contains_Prg_Ram: %d\n", contains_prg_ram);
-    printf("Four_Screen_Vram: %d\n", four_screen_vram);
+    byte *prg_rom = malloc(prg_size);
+    byte *chr_rom = malloc(chr_size);
+    byte *sram = malloc(8192);
 
-    printf("Mirroring: %d\n", mirroring);
-    printf("Mapper: %d\n", mapper);
+    read_bytes(prg_rom, prg_size, file);
+    read_bytes(chr_rom, chr_size, file);
 
     fclose(file);
+
+    byte mapper = ((lower_nybble_mapper >> 4) | upper_nybble_mapper);
+    byte mirroring = mirroring_arrangement | four_screen_vram;
+
+    Cartridge c = { 0 };
+    c.prg = prg_rom;
+    c.chr = chr_rom;
+    c.sram = sram;
+    c.mapper = mapper;
+    c.mirror = mirroring;
+    c.battery = contains_battery_backed_ram;
+    return c;
+}
+
+void cartridge_free(Cartridge *c) {
+    free(c->prg);
+    free(c->chr);
+    free(c->sram);
+}
+
+int main(void) {
+    Cartridge cartridge = cartridge_from_ines_file(FILEPATH);
+    // Now what do I do with all this?
+    cartridge_free(&cartridge);
     return 0;
 }
