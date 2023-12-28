@@ -52,7 +52,7 @@ const size_t instruction_sizes[256] = {
     2, 2, 0, 0, 2, 2, 2, 0, 1, 2, 1, 0, 3, 3, 3, 0,
     2, 2, 0, 0, 2, 2, 2, 0, 1, 3, 1, 0, 3, 3, 3, 0,
 };
-PN
+
 const byte instruction_cycles[256] = {
     7, 6, 2, 8, 3, 3, 5, 5, 3, 2, 2, 2, 4, 4, 6, 6,
     2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
@@ -193,6 +193,7 @@ Cartridge cartridge_from_ines_file(const char *filepath, Arena *arena) {
 
     byte expected_magic[] = { 'N', 'E', 'S', 0x1A };
     const size_t magic_size = array_len(expected_magic);
+
     byte magic[magic_size];
     read_bytes(magic, magic_size, file);
 
