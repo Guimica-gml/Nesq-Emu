@@ -15,6 +15,8 @@
 typedef uint8_t byte;
 typedef uint16_t u16;
 
+// TODO: rewrite this to make sure it's on the same order
+// as the Addresing_Mode enum
 const size_t instruction_modes[256] = {
     6, 7, 6, 7, 11, 11, 11, 11, 6, 5, 4, 5, 1, 1, 1, 1,
     10, 9, 6, 9, 12, 12, 12, 12, 6, 3, 6, 3, 2, 2, 2, 2,
@@ -73,7 +75,7 @@ const byte instruction_cycles[256] = {
 };
 
 // NOTE(nic): indicates the number of cycles used by each
-// instruction when a page is crossed, this may not be necessary
+// instruction when a page is crossed, this table may not be necessary
 const byte instruction_page_cycles[256] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0,
@@ -121,29 +123,35 @@ typedef struct {
     bool battery;
 } Cartridge;
 
-#define CPU_MEMORY_CAP       0x800
+#define SAVE_RAM_CAP     0x2000
+#define MEMORY_CAP       0x0800
 
-#define CPU_STACK_OFFSET     0x100
-#define CPU_ZERO_PAGE_OFFSET 0x000
+#define ZERO_PAGE_OFFSET 0x0000
+#define STACK_OFFSET     0x0100
+#define RAM_OFFSET       0x0200
+#define PRG_ROM_OFFSET   0x8000
 
 typedef enum {
-    ADDR_MODE_UNDEFINED, // Error
-    ADDR_MODE_ZERO_PAGE_X,
-    ADDR_MODE_ZERO_PAGE_Y,
+    ADDR_MODE_ABSOLUTE,
     ADDR_MODE_ABSOULUTE_X,
     ADDR_MODE_ABSOULUTE_Y,
+
+    ADDR_MODE_ZERO_PAGE,
+    ADDR_MODE_ZERO_PAGE_X,
+    ADDR_MODE_ZERO_PAGE_Y,
+
+    ADDR_MODE_INDIRECT,
     ADDR_MODE_INDIRECT_X,
     ADDR_MODE_INDIRECT_Y,
-    ADDR_MODE_IMPLICIT,
-    ADDR_MODE_ACCUMULATOR,
-    ADDR_MODE_IMMEDIATE,
-    ADDR_MODE_ZERO_PAGE,
-    ADDR_MODE_ABSOLUTE,
+
     ADDR_MODE_RELATIVE,
-    ADDR_MODE_INDIRECT,
+    ADDR_MODE_IMPLICIT,
+    ADDR_MODE_IMMEDIATE,
+    ADDR_MODE_ACCUMULATOR,
 } Addressing_Mode;
 
 typedef struct {
+    // CPU
     u16  reg_pc; // Program counter
     byte reg_sp; // Stack pointer
     byte reg_a;  // Accumulator
@@ -151,24 +159,37 @@ typedef struct {
     byte reg_y;
     byte reg_p;  // Processor status
     Addressing_Mode addr_mode;
-    byte mem[CPU_MEMORY_CAP];
-} CPU;
+    byte mem[MEMORY_CAP];
+    byte io_regs_one[8];
+    byte io_regs_two[32];
 
-typedef struct {
-    int dummy; // TODO
-} PPU;
-
-typedef struct {
-    int dummy; // TODO
-} Controller;
-
-typedef struct {
-    CPU cpu;
-    PPU ppu;
-    Cartridge cartridge;
-    Controller controller_one;
-    Controller controller_two;
+    // Cartridge
+    byte *prg;
+    byte *chr;
+    byte sram[SAVE_RAM_CAP];
+    byte mapper;
+    byte mirror;
+    bool battery;
 } NES;
+
+void nes_exec_next_instruction(NES *nes) {
+    (void) nes;
+}
+
+byte nes_read(const NES *nes, u16 address) {
+    if (address > PRG_ROM_OFFSET && address < 0xFFFF) {
+        return nes->prg[address - PRG_ROM_OFFSET];
+    }
+
+    fprintf(stderr, "Error: not able to read memory from address 0x%x\n", address);
+    exit(1);
+}
+
+void nes_write(NES *nes, u16 address, byte byte) {
+    (void) nes;
+    (void) address;
+    (void) byte;
+}
 
 void read_bytes(void *buffer, size_t count, FILE *stream) {
     size_t read = fread(buffer, sizeof(char), count, stream);
@@ -184,7 +205,7 @@ byte read_byte(FILE *stream) {
     return byte;
 }
 
-Cartridge cartridge_from_ines_file(const char *filepath, Arena *arena) {
+NES nes_from_ines_file(const char *filepath, Arena *arena) {
     FILE *file = fopen(filepath, "rb");
     if (file == NULL) {
         fprintf(stderr, "Error: could not open `%s`: %s\n", filepath, strerror(errno));
@@ -255,39 +276,37 @@ Cartridge cartridge_from_ines_file(const char *filepath, Arena *arena) {
 
     byte *prg = arena_alloc(arena, prg_size);
     byte *chr = arena_alloc(arena, chr_size);
-    byte *sram = arena_alloc(arena, 8192);
 
     read_bytes(prg, prg_size, file);
     read_bytes(chr, chr_size, file);
 
     fclose(file);
 
-    byte mapper = ((lower_nybble_mapper >> 4) | upper_nybble_mapper);
+    byte mapper = (lower_nybble_mapper >> 4) | upper_nybble_mapper;
     byte mirroring = mirroring_arrangement | four_screen_vram;
 
-    Cartridge c = { 0 };
-    c.prg = prg;
-    c.chr = chr;
-    c.sram = sram;
-    c.mapper = mapper;
-    c.mirror = mirroring;
-    c.battery = contains_battery_backed_ram;
-    return c;
-}
-
-NES nes_new(Cartridge cartridge) {
     NES nes = { 0 };
-    nes.cartridge = cartridge;
+
+    // Initialize cartridge data
+    nes.prg = prg;
+    nes.chr = chr;
+    nes.mapper = mapper;
+    nes.mirror = mirroring;
+    nes.battery = contains_battery_backed_ram;
+
+    // Initialize CPU data
+    nes.reg_pc = nes_read(&nes, 0xFFFD) * 256 + nes_read(&nes, 0xFFFC);
+    nes.reg_p = 0x34; // Is this correct?
+
+    printf("Register PC: 0x%x\n", nes.reg_pc);
     return nes;
 }
 
 int main(void) {
     Arena arena = { 0 };
 
-    Cartridge cartridge = cartridge_from_ines_file(FILEPATH, &arena);
-    NES nes = nes_new(cartridge);
-
-    (void) nes;
+    NES nes = nes_from_ines_file(FILEPATH, &arena);
+    nes_exec_next_instruction(&nes);
 
     arena_free(&arena);
     return 0;
