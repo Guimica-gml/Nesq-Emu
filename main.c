@@ -15,25 +15,24 @@
 typedef uint8_t byte;
 typedef uint16_t u16;
 
-// TODO: rewrite this to make sure it's on the same order
-// as the Addresing_Mode enum
+// TODO: fill in as I implement the instructions
 const size_t instruction_modes[256] = {
-    6, 7, 6, 7, 11, 11, 11, 11, 6, 5, 4, 5, 1, 1, 1, 1,
-    10, 9, 6, 9, 12, 12, 12, 12, 6, 3, 6, 3, 2, 2, 2, 2,
-    1, 7, 6, 7, 11, 11, 11, 11, 6, 5, 4, 5, 1, 1, 1, 1,
-    10, 9, 6, 9, 12, 12, 12, 12, 6, 3, 6, 3, 2, 2, 2, 2,
-    6, 7, 6, 7, 11, 11, 11, 11, 6, 5, 4, 5, 1, 1, 1, 1,
-    10, 9, 6, 9, 12, 12, 12, 12, 6, 3, 6, 3, 2, 2, 2, 2,
-    6, 7, 6, 7, 11, 11, 11, 11, 6, 5, 4, 5, 8, 1, 1, 1,
-    10, 9, 6, 9, 12, 12, 12, 12, 6, 3, 6, 3, 2, 2, 2, 2,
-    5, 7, 5, 7, 11, 11, 11, 11, 6, 5, 6, 5, 1, 1, 1, 1,
-    10, 9, 6, 9, 12, 12, 13, 13, 6, 3, 6, 3, 2, 2, 3, 3,
-    5, 7, 5, 7, 11, 11, 11, 11, 6, 5, 6, 5, 1, 1, 1, 1,
-    10, 9, 6, 9, 12, 12, 13, 13, 6, 3, 6, 3, 2, 2, 3, 3,
-    5, 7, 5, 7, 11, 11, 11, 11, 6, 5, 6, 5, 1, 1, 1, 1,
-    10, 9, 6, 9, 12, 12, 12, 12, 6, 3, 6, 3, 2, 2, 2, 2,
-    5, 7, 5, 7, 11, 11, 11, 11, 6, 5, 6, 5, 1, 1, 1, 1,
-    10, 9, 6, 9, 12, 12, 12, 12, 6, 3, 6, 3, 2, 2, 2, 2,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 };
 
 const size_t instruction_sizes[256] = {
@@ -132,22 +131,22 @@ typedef struct {
 #define PRG_ROM_OFFSET   0x8000
 
 typedef enum {
-    ADDR_MODE_ABSOLUTE,
-    ADDR_MODE_ABSOULUTE_X,
-    ADDR_MODE_ABSOULUTE_Y,
+    ADDR_MODE_ABSOLUTE     = 0,
+    ADDR_MODE_ABSOULUTE_X  = 1,
+    ADDR_MODE_ABSOULUTE_Y  = 2,
 
-    ADDR_MODE_ZERO_PAGE,
-    ADDR_MODE_ZERO_PAGE_X,
-    ADDR_MODE_ZERO_PAGE_Y,
+    ADDR_MODE_ZERO_PAGE    = 3,
+    ADDR_MODE_ZERO_PAGE_X  = 4,
+    ADDR_MODE_ZERO_PAGE_Y  = 5,
 
-    ADDR_MODE_INDIRECT,
-    ADDR_MODE_INDIRECT_X,
-    ADDR_MODE_INDIRECT_Y,
+    ADDR_MODE_INDIRECT     = 6,
+    ADDR_MODE_INDIRECT_X   = 7,
+    ADDR_MODE_INDIRECT_Y   = 8,
 
-    ADDR_MODE_RELATIVE,
-    ADDR_MODE_IMPLICIT,
-    ADDR_MODE_IMMEDIATE,
-    ADDR_MODE_ACCUMULATOR,
+    ADDR_MODE_IMPLIED      = 9,
+    ADDR_MODE_RELATIVE     = 10,
+    ADDR_MODE_IMMEDIATE    = 11,
+    ADDR_MODE_ACCUMULATOR  = 12,
 } Addressing_Mode;
 
 typedef struct {
@@ -172,12 +171,31 @@ typedef struct {
     bool battery;
 } NES;
 
-void nes_exec_next_instruction(NES *nes) {
-    (void) nes;
+typedef size_t (*inst_func)(NES *nes, byte *data);
+
+const char *addr_mode_name(Addressing_Mode addr_mode) {
+    switch (addr_mode) {
+        case ADDR_MODE_ABSOLUTE: return "abs";
+        case ADDR_MODE_ABSOULUTE_X: return "abs,X";
+        case ADDR_MODE_ABSOULUTE_Y: return "abs,Y";
+        case ADDR_MODE_ZERO_PAGE: return "zpg";
+        case ADDR_MODE_ZERO_PAGE_X: return "xpg,X";
+        case ADDR_MODE_ZERO_PAGE_Y: return "xpg,Y";
+        case ADDR_MODE_INDIRECT: return "ind";
+        case ADDR_MODE_INDIRECT_X: return "X,ind";
+        case ADDR_MODE_INDIRECT_Y: return "ind,Y";
+        case ADDR_MODE_RELATIVE: return "rel";
+        case ADDR_MODE_IMPLIED: return "imp";
+        case ADDR_MODE_IMMEDIATE: return "#";
+        case ADDR_MODE_ACCUMULATOR: return "A";
+        default: {
+            assert(0 && "unreachable");
+        }
+    }
 }
 
 byte nes_read(const NES *nes, u16 address) {
-    if (address > PRG_ROM_OFFSET && address < 0xFFFF) {
+    if (address >= PRG_ROM_OFFSET) {
         return nes->prg[address - PRG_ROM_OFFSET];
     }
 
@@ -189,6 +207,66 @@ void nes_write(NES *nes, u16 address, byte byte) {
     (void) nes;
     (void) address;
     (void) byte;
+    assert(0 && "unimplemeted");
+}
+
+// NOTE(nic): There's clearly something wrong with our jmp implementation
+// Also, the nes jmp instruction has a bug
+// I have to simulate that bug, look into that later
+size_t nes_exec_jmp(NES *nes, byte *data) {
+    u16 pcl = data[0];
+    u16 pch = data[1];
+
+    if (nes->addr_mode == ADDR_MODE_ABSOLUTE) {
+        u16 jump_address = (pcl << 8) | pch;
+        nes->reg_pc = jump_address;
+    } else if (nes->addr_mode == ADDR_MODE_INDIRECT) {
+        assert(0 && "unimplemented");
+    } else {
+        fprintf(stderr, "Error: illegal instruction?\n");
+        exit(1);
+    }
+
+    return 0;
+}
+
+// TODO: implement as I write the instructions
+const inst_func instruction_funcs[256] = {
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, nes_exec_jmp, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, nes_exec_jmp, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+};
+
+void nes_exec_next_instruction(NES *nes) {
+    u16 inst_addr = nes->reg_pc;
+    byte inst_byte = nes_read(nes, inst_addr);
+    nes->reg_pc += instruction_sizes[inst_byte];
+
+    nes->addr_mode = instruction_modes[inst_byte];
+    if (instruction_funcs[inst_byte]) {
+        byte *data = &nes->prg[inst_addr + 1];
+        instruction_funcs[inst_byte](nes, data);
+    }
+
+    printf("Inst addr: 0x%x\n", inst_addr);
+    printf("Inst byte: 0x%x\n", inst_byte);
+    printf("Inst name: %s %s\n", instruction_names[inst_byte], addr_mode_name(nes->addr_mode));
+    printf("Inst cycles: %d\n", instruction_cycles[inst_byte]);
+    printf("Inst size: %zu\n", instruction_sizes[inst_byte]);
+    printf("--------------\n");
 }
 
 void read_bytes(void *buffer, size_t count, FILE *stream) {
@@ -298,7 +376,6 @@ NES nes_from_ines_file(const char *filepath, Arena *arena) {
     nes.reg_pc = nes_read(&nes, 0xFFFD) * 256 + nes_read(&nes, 0xFFFC);
     nes.reg_p = 0x34; // Is this correct?
 
-    printf("Register PC: 0x%x\n", nes.reg_pc);
     return nes;
 }
 
@@ -306,7 +383,10 @@ int main(void) {
     Arena arena = { 0 };
 
     NES nes = nes_from_ines_file(FILEPATH, &arena);
-    nes_exec_next_instruction(&nes);
+
+    for (size_t i = 0; i < 100; ++i) {
+        nes_exec_next_instruction(&nes);
+    }
 
     arena_free(&arena);
     return 0;
