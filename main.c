@@ -12,17 +12,12 @@
 
 #define array_len(arr) sizeof(arr) / sizeof((arr)[0])
 
-typedef uint8_t byte;
-typedef uint16_t u16;
+#define bit_set(b, n)    (b) = ((b) | (1 << n))
+#define bit_clear(b, n)  (b) = ((b) & ~(1 << n))
+#define bit_toggle(b, n) (b) = ((b) ^ (1 << n))
 
-typedef struct {
-    byte *prg;
-    byte *chr;
-    byte *sram;
-    byte mapper;
-    byte mirror;
-    bool battery;
-} Cartridge;
+typedef uint8_t  byte;
+typedef uint16_t word;
 
 #define SAVE_RAM_CAP     0x2000
 #define MEMORY_CAP       0x0800
@@ -34,8 +29,8 @@ typedef struct {
 
 typedef enum {
     ADDR_MODE_ABSOLUTE     = 0,
-    ADDR_MODE_ABSOULUTE_X  = 1,
-    ADDR_MODE_ABSOULUTE_Y  = 2,
+    ADDR_MODE_ABSOLUTE_X   = 1,
+    ADDR_MODE_ABSOLUTE_Y   = 2,
 
     ADDR_MODE_ZERO_PAGE    = 3,
     ADDR_MODE_ZERO_PAGE_X  = 4,
@@ -51,9 +46,20 @@ typedef enum {
     ADDR_MODE_ACCUMULATOR  = 12,
 } Addressing_Mode;
 
+typedef enum {
+    STATUS_BIT_CARRY = 0,
+    STATUS_BIT_ZERO,
+    STATUS_BIT_INTERRUPT,
+    STATUS_BIT_DECIMAL,
+    STATUS_BIT_BREAK,
+    STATUS_BIT_IGNORED,
+    STATUS_BIT_OVERFLOW,
+    STATUS_BIT_NEGATIVE,
+} Status_Bit;
+
 typedef struct {
     // CPU
-    u16  reg_pc; // Program counter
+    word reg_pc; // Program counter
     byte reg_sp; // Stack pointer
     byte reg_a;  // Accumulator
     byte reg_x;
@@ -73,13 +79,13 @@ typedef struct {
     bool battery;
 } NES;
 
-typedef size_t (*inst_func)(NES *nes, u16 address);
+typedef size_t (*inst_func)(NES *nes, word address);
 
 const char *addr_mode_name(Addressing_Mode addr_mode) {
     switch (addr_mode) {
         case ADDR_MODE_ABSOLUTE: return "abs";
-        case ADDR_MODE_ABSOULUTE_X: return "abs,X";
-        case ADDR_MODE_ABSOULUTE_Y: return "abs,Y";
+        case ADDR_MODE_ABSOLUTE_X: return "abs,X";
+        case ADDR_MODE_ABSOLUTE_Y: return "abs,Y";
         case ADDR_MODE_ZERO_PAGE: return "zpg";
         case ADDR_MODE_ZERO_PAGE_X: return "xpg,X";
         case ADDR_MODE_ZERO_PAGE_Y: return "xpg,Y";
@@ -96,20 +102,26 @@ const char *addr_mode_name(Addressing_Mode addr_mode) {
     }
 }
 
-byte nes_read(const NES *nes, u16 address) {
+byte nes_read(const NES *nes, word address) {
+    if (address < 0x800) {
+        return nes->mem[address];
+    }
+
     if (address >= PRG_ROM_OFFSET) {
         return nes->prg[address - PRG_ROM_OFFSET];
     }
 
-    fprintf(stderr, "Error: not able to read memory from address 0x%x\n", address);
+    fprintf(stderr, "Error: not able to read memory from address 0x%X\n", address);
     exit(1);
 }
 
-void nes_write(NES *nes, u16 address, byte byte) {
-    (void) nes;
-    (void) address;
-    (void) byte;
-    assert(0 && "unimplemented");
+void nes_write(NES *nes, word address, byte byte) {
+    if (address < 0x800) {
+        nes->mem[address] = byte;
+    }
+
+    fprintf(stderr, "Error: not able to write to memory address 0x%X\n", address);
+    exit(1);
 }
 
 void nes_stack_push(NES *nes, byte byte) {
@@ -131,57 +143,149 @@ void nes_stack_print(NES *nes) {
     printf("-----\n");
 }
 
+// Used by the instructions to get the address of memory where
+// the data they need is located, can be written to or read from
+word nes_fetch_data_address(NES *nes, word address) {
+    switch (nes->addr_mode) {
+        case ADDR_MODE_ABSOLUTE: {
+            word lo = nes_read(nes, address + 1);
+            word hi = nes_read(nes, address + 2);
+            return lo | (hi << 8);
+        }
+        case ADDR_MODE_ABSOLUTE_X: {
+            word lo = nes_read(nes, address + 1);
+            word hi = nes_read(nes, address + 2);
+            return (lo | (hi << 8)) + nes->reg_x;
+        }
+        case ADDR_MODE_ABSOLUTE_Y: {
+            word lo = nes_read(nes, address + 1);
+            word hi = nes_read(nes, address + 2);
+            return (lo | (hi << 8)) + nes->reg_y;
+        }
+        case ADDR_MODE_ZERO_PAGE: {
+            return nes_read(nes, address + 1);
+        }
+        case ADDR_MODE_ZERO_PAGE_X: {
+            return nes_read(nes, address + 1) + nes->reg_x;
+        }
+        case ADDR_MODE_ZERO_PAGE_Y: {
+            return nes_read(nes, address + 1) + nes->reg_y;
+        }
+        case ADDR_MODE_INDIRECT: {
+            word lo = nes_read(nes, address + 1);
+            word hi = nes_read(nes, address + 2);
+            word other = lo | (hi << 8);
+            lo = nes_read(nes, other);
+            hi = nes_read(nes, other + 1);
+            return lo | (hi << 8);
+        }
+        case ADDR_MODE_INDIRECT_X: {
+            word ind = nes_read(nes, address + 1);
+            word a = ind + nes->reg_x;
+            word lo = nes_read(nes, a);
+            word hi = nes_read(nes, a + 1);
+            return lo | (hi << 8);
+        }
+        case ADDR_MODE_INDIRECT_Y: {
+            word a = nes_read(nes, address + 1);
+            word lo = nes_read(nes, a);
+            word hi = nes_read(nes, a + 1);
+            return (lo | (hi << 8)) + nes->reg_y;
+        }
+        case ADDR_MODE_RELATIVE: {
+            word rel = nes_read(nes, address + 1);
+            return nes->reg_pc + rel;
+        }
+        case ADDR_MODE_IMPLIED: {
+            fprintf(stderr, "Error: cannot fetch from addresing mode 'implied'\n");
+            exit(1);
+        }
+        case ADDR_MODE_IMMEDIATE: {
+            return address + 1;
+        }
+        case ADDR_MODE_ACCUMULATOR: {
+            fprintf(stderr, "Error: cannot fetch from addresing mode 'accumulator'\n");
+            exit(1);
+        }
+        default: {
+            assert(0 && "unreachable");
+        }
+    }
+}
+
 // NOTE(nic): the nes jmp instruction has a bug
 // I have to simulate that bug, look into that later
-size_t nes_exec_jmp(NES *nes, u16 address) {
-    if (nes->addr_mode == ADDR_MODE_ABSOLUTE) {
-        u16 lo = nes_read(nes, address + 1);
-        u16 hi = nes_read(nes, address + 2);
-        nes->reg_pc = lo | (hi << 8);
-    } else if (nes->addr_mode == ADDR_MODE_INDIRECT) {
-        assert(0 && "unimplemented");
-    } else {
-        assert(0 && "unreachable");
-    }
+size_t nes_exec_jmp(NES *nes, word address) {
+    nes->reg_pc = nes_fetch_data_address(nes, address);
     return 0;
 }
 
-size_t nes_exec_jsr(NES *nes, u16 address) {
+size_t nes_exec_jsr(NES *nes, word address) {
     assert(nes->addr_mode == ADDR_MODE_ABSOLUTE);
     nes_stack_push(nes, (byte) ((address & 0xFF00) >> 8));
     nes_stack_push(nes, (byte) (address & 0x00FF));
-    u16 lo = nes_read(nes, address + 1);
-    u16 hi = nes_read(nes, address + 2);
+    nes->reg_pc = nes_fetch_data_address(nes, address);
+    return 0;
+}
+
+size_t nes_exec_rts(NES *nes, word address) {
+    (void) address;
+    assert(nes->addr_mode == ADDR_MODE_IMPLIED);
+    word lo = nes_stack_pop(nes);
+    word hi = nes_stack_pop(nes);
     nes->reg_pc = lo | (hi << 8);
     return 0;
 }
 
-size_t nes_exec_rts(NES *nes, u16 address) {
+size_t nes_exec_sei(NES *nes, word address) {
     (void) address;
     assert(nes->addr_mode == ADDR_MODE_IMPLIED);
-    u16 lo = nes_stack_pop(nes);
-    u16 hi = nes_stack_pop(nes);
-    nes->reg_pc = lo | (hi << 8);
+    bit_set(nes->reg_p, STATUS_BIT_INTERRUPT);
+    return 0;
+}
+
+size_t nes_exec_cld(NES *nes, word address) {
+    (void) address;
+    assert(nes->addr_mode == ADDR_MODE_IMPLIED);
+    bit_clear(nes->reg_p, STATUS_BIT_DECIMAL);
+    return 0;
+}
+
+// TODO: check if page boundary is crossed when absoluteX, absoluteY and (indirect)Y
+// and return 1 if so
+size_t nes_exec_lda(NES *nes, word address) {
+    (void) address;
+    word data_addr = nes_fetch_data_address(nes, address);
+    nes->reg_a = nes_read(nes, data_addr);
     return 0;
 }
 
 #include "./instructions.def"
 
 void nes_exec_next_instruction(NES *nes) {
-    u16 inst_addr = nes->reg_pc;
+    word inst_addr = nes->reg_pc;
     byte opcode = nes_read(nes, inst_addr);
-    nes->reg_pc += instruction_sizes[opcode];
 
+    nes->reg_pc += instruction_sizes[opcode];
     nes->addr_mode = instruction_modes[opcode];
+
     if (instruction_funcs[opcode]) {
         instruction_funcs[opcode](nes, inst_addr);
+    } else {
+        fprintf(
+            stderr,
+            "Error: instruction `%s %s` is not implemented\n",
+            instruction_names[opcode],
+            addr_mode_name(nes->addr_mode));
+        exit(1);
     }
 
     printf("Inst addr: 0x%X\n", inst_addr);
     printf("Op code: 0x%X\n", opcode);
-    printf("Inst name: %s %s\n",
-           instruction_names[opcode],
-           addr_mode_name(nes->addr_mode));
+    printf(
+        "Inst name: %s %s\n",
+        instruction_names[opcode],
+        addr_mode_name(nes->addr_mode));
     printf("Inst cycles: %d\n", instruction_cycles[opcode]);
     printf("Inst size: %zu\n", instruction_sizes[opcode]);
     printf("--------------\n");
