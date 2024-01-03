@@ -73,7 +73,7 @@ typedef struct {
     bool battery;
 } NES;
 
-typedef size_t (*inst_func)(NES *nes, byte *data);
+typedef size_t (*inst_func)(NES *nes, const byte *data);
 
 const char *addr_mode_name(Addressing_Mode addr_mode) {
     switch (addr_mode) {
@@ -109,26 +109,56 @@ void nes_write(NES *nes, u16 address, byte byte) {
     (void) nes;
     (void) address;
     (void) byte;
-    assert(0 && "unimplemeted");
+    assert(0 && "unimplemented");
 }
 
-// NOTE(nic): There's clearly something wrong with our jmp implementation
-// Also, the nes jmp instruction has a bug
-// I have to simulate that bug, look into that later
-size_t nes_exec_jmp(NES *nes, byte *data) {
-    u16 pcl = data[0];
-    u16 pch = data[1];
+void nes_stack_push(NES *nes, byte byte) {
+    assert(nes->reg_sp >= 0x00);
+    nes->mem[STACK_OFFSET + (nes->reg_sp--)] = byte;
+}
 
+byte nes_stack_pop(NES *nes) {
+    assert(nes->reg_sp <= 0xFF);
+    return nes->mem[STACK_OFFSET + (++nes->reg_sp)];
+}
+
+void nes_stack_print(NES *nes) {
+    size_t stack_size = 0xFF - nes->reg_sp;
+    printf("Stack:\n");
+    for (size_t i = 0; i < stack_size; ++i) {
+        printf("0x%X\n", nes->mem[STACK_OFFSET + 0xFF - i]);
+    }
+    printf("-----\n");
+}
+
+// NOTE(nic): the nes jmp instruction has a bug
+// I have to simulate that bug, look into that later
+size_t nes_exec_jmp(NES *nes, const byte *data) {
     if (nes->addr_mode == ADDR_MODE_ABSOLUTE) {
-        u16 jump_address = (pcl << 8) | pch;
-        nes->reg_pc = jump_address;
+        nes->reg_pc = *(u16*)data;
     } else if (nes->addr_mode == ADDR_MODE_INDIRECT) {
         assert(0 && "unimplemented");
     } else {
-        fprintf(stderr, "Error: illegal instruction?\n");
-        exit(1);
+        assert(0 && "unreachable");
     }
+    return 0;
+}
 
+size_t nes_exec_jsr(NES *nes, const byte *data) {
+    assert(nes->addr_mode == ADDR_MODE_ABSOLUTE);
+    u16 opcode_addr = nes->reg_pc - 3;
+    nes_stack_push(nes, (byte) ((opcode_addr & 0xFF00) >> 8));
+    nes_stack_push(nes, (byte) (opcode_addr & 0x00FF));
+    nes->reg_pc = *(u16*)data;
+    return 0;
+}
+
+size_t nes_exec_rts(NES *nes, const byte *data) {
+    (void) data;
+    assert(nes->addr_mode == ADDR_MODE_IMPLIED);
+    u16 hi = nes_stack_pop(nes);
+    u16 lo = nes_stack_pop(nes);
+    nes->reg_pc = lo | (hi << 8);
     return 0;
 }
 
@@ -136,20 +166,22 @@ size_t nes_exec_jmp(NES *nes, byte *data) {
 
 void nes_exec_next_instruction(NES *nes) {
     u16 inst_addr = nes->reg_pc;
-    byte inst_byte = nes_read(nes, inst_addr);
-    nes->reg_pc += instruction_sizes[inst_byte];
+    byte opcode = nes_read(nes, inst_addr);
+    nes->reg_pc += instruction_sizes[opcode];
 
-    nes->addr_mode = instruction_modes[inst_byte];
-    if (instruction_funcs[inst_byte]) {
-        byte *data = &nes->prg[inst_addr + 1];
-        instruction_funcs[inst_byte](nes, data);
+    nes->addr_mode = instruction_modes[opcode];
+    if (instruction_funcs[opcode]) {
+        const byte *data = &nes->prg[inst_addr + 1];
+        nes->reg_pc += instruction_funcs[opcode](nes, data);
     }
 
-    printf("Inst addr: 0x%x\n", inst_addr);
-    printf("Inst byte: 0x%x\n", inst_byte);
-    printf("Inst name: %s %s\n", instruction_names[inst_byte], addr_mode_name(nes->addr_mode));
-    printf("Inst cycles: %d\n", instruction_cycles[inst_byte]);
-    printf("Inst size: %zu\n", instruction_sizes[inst_byte]);
+    printf("Inst addr: 0x%X\n", inst_addr);
+    printf("Opcode: 0x%X\n", opcode);
+    printf("Inst name: %s %s\n",
+           instruction_names[opcode],
+           addr_mode_name(nes->addr_mode));
+    printf("Inst cycles: %d\n", instruction_cycles[opcode]);
+    printf("Inst size: %zu\n", instruction_sizes[opcode]);
     printf("--------------\n");
 }
 
@@ -258,6 +290,7 @@ NES nes_from_ines_file(const char *filepath, Arena *arena) {
 
     // Initialize CPU data
     nes.reg_pc = nes_read(&nes, 0xFFFD) * 256 + nes_read(&nes, 0xFFFC);
+    nes.reg_sp = 0xFF;
     nes.reg_p = 0x34; // Is this correct?
 
     return nes;
@@ -270,6 +303,7 @@ int main(void) {
 
     for (size_t i = 0; i < 100; ++i) {
         nes_exec_next_instruction(&nes);
+        nes_stack_print(&nes);
     }
 
     arena_free(&arena);
