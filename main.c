@@ -73,7 +73,7 @@ typedef struct {
     bool battery;
 } NES;
 
-typedef size_t (*inst_func)(NES *nes, const byte *data);
+typedef size_t (*inst_func)(NES *nes, u16 address);
 
 const char *addr_mode_name(Addressing_Mode addr_mode) {
     switch (addr_mode) {
@@ -133,9 +133,11 @@ void nes_stack_print(NES *nes) {
 
 // NOTE(nic): the nes jmp instruction has a bug
 // I have to simulate that bug, look into that later
-size_t nes_exec_jmp(NES *nes, const byte *data) {
+size_t nes_exec_jmp(NES *nes, u16 address) {
     if (nes->addr_mode == ADDR_MODE_ABSOLUTE) {
-        nes->reg_pc = *(u16*)data;
+        u16 lo = nes_read(nes, address + 1);
+        u16 hi = nes_read(nes, address + 2);
+        nes->reg_pc = lo | (hi << 8);
     } else if (nes->addr_mode == ADDR_MODE_INDIRECT) {
         assert(0 && "unimplemented");
     } else {
@@ -144,20 +146,21 @@ size_t nes_exec_jmp(NES *nes, const byte *data) {
     return 0;
 }
 
-size_t nes_exec_jsr(NES *nes, const byte *data) {
+size_t nes_exec_jsr(NES *nes, u16 address) {
     assert(nes->addr_mode == ADDR_MODE_ABSOLUTE);
-    u16 opcode_addr = nes->reg_pc - 3;
-    nes_stack_push(nes, (byte) ((opcode_addr & 0xFF00) >> 8));
-    nes_stack_push(nes, (byte) (opcode_addr & 0x00FF));
-    nes->reg_pc = *(u16*)data;
+    nes_stack_push(nes, (byte) ((address & 0xFF00) >> 8));
+    nes_stack_push(nes, (byte) (address & 0x00FF));
+    u16 lo = nes_read(nes, address + 1);
+    u16 hi = nes_read(nes, address + 2);
+    nes->reg_pc = lo | (hi << 8);
     return 0;
 }
 
-size_t nes_exec_rts(NES *nes, const byte *data) {
-    (void) data;
+size_t nes_exec_rts(NES *nes, u16 address) {
+    (void) address;
     assert(nes->addr_mode == ADDR_MODE_IMPLIED);
-    u16 hi = nes_stack_pop(nes);
     u16 lo = nes_stack_pop(nes);
+    u16 hi = nes_stack_pop(nes);
     nes->reg_pc = lo | (hi << 8);
     return 0;
 }
@@ -171,12 +174,11 @@ void nes_exec_next_instruction(NES *nes) {
 
     nes->addr_mode = instruction_modes[opcode];
     if (instruction_funcs[opcode]) {
-        const byte *data = &nes->prg[inst_addr + 1];
-        nes->reg_pc += instruction_funcs[opcode](nes, data);
+        instruction_funcs[opcode](nes, inst_addr);
     }
 
     printf("Inst addr: 0x%X\n", inst_addr);
-    printf("Opcode: 0x%X\n", opcode);
+    printf("Op code: 0x%X\n", opcode);
     printf("Inst name: %s %s\n",
            instruction_names[opcode],
            addr_mode_name(nes->addr_mode));
