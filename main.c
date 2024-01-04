@@ -16,6 +16,15 @@
 #define bit_clear(b, n)  (b) = ((b) & ~(1 << n))
 #define bit_toggle(b, n) (b) = ((b) ^ (1 << n))
 
+#define bit_set_if(b, n, cond)                  \
+    do {                                        \
+        if (cond) {                             \
+            bit_set(b, n);                      \
+        } else {                                \
+            bit_clear(b, n);                    \
+        }                                       \
+    } while (0);
+
 typedef uint8_t  byte;
 typedef uint16_t word;
 
@@ -173,7 +182,14 @@ word nes_fetch_data_address(NES *nes, word address) {
         }
         case ADDR_MODE_INDIRECT: {
             word lo = nes_read(nes, address + 1);
-            word hi = nes_read(nes, address + 2);
+            // NOTE(nic): this is here to simulate a bug
+            // in the indirect jmp (0x6C) instruction
+            word hi;
+            if (nes_read(nes, address) == 0x6C && (address & 0xFF) == 0xFF) {
+                hi = nes_read(nes, address + 2);
+            } else {
+                hi = nes_read(nes, address + 1 - 0xFF);
+            }
             word other = lo | (hi << 8);
             lo = nes_read(nes, other);
             hi = nes_read(nes, other + 1);
@@ -213,24 +229,20 @@ word nes_fetch_data_address(NES *nes, word address) {
     }
 }
 
-// NOTE(nic): the nes jmp instruction has a bug
-// I have to simulate that bug, look into that later
 size_t nes_exec_jmp(NES *nes, word address) {
     nes->reg_pc = nes_fetch_data_address(nes, address);
     return 0;
 }
 
 size_t nes_exec_jsr(NES *nes, word address) {
-    assert(nes->addr_mode == ADDR_MODE_ABSOLUTE);
     nes_stack_push(nes, (byte) ((address & 0xFF00) >> 8));
-    nes_stack_push(nes, (byte) (address & 0x00FF));
+    nes_stack_push(nes, (byte) ((address & 0x00FF) >> 0));
     nes->reg_pc = nes_fetch_data_address(nes, address);
     return 0;
 }
 
 size_t nes_exec_rts(NES *nes, word address) {
     (void) address;
-    assert(nes->addr_mode == ADDR_MODE_IMPLIED);
     word lo = nes_stack_pop(nes);
     word hi = nes_stack_pop(nes);
     nes->reg_pc = lo | (hi << 8);
@@ -239,24 +251,24 @@ size_t nes_exec_rts(NES *nes, word address) {
 
 size_t nes_exec_sei(NES *nes, word address) {
     (void) address;
-    assert(nes->addr_mode == ADDR_MODE_IMPLIED);
     bit_set(nes->reg_p, STATUS_BIT_INTERRUPT);
     return 0;
 }
 
 size_t nes_exec_cld(NES *nes, word address) {
     (void) address;
-    assert(nes->addr_mode == ADDR_MODE_IMPLIED);
     bit_clear(nes->reg_p, STATUS_BIT_DECIMAL);
     return 0;
 }
 
-// TODO: check if page boundary is crossed when absoluteX, absoluteY and (indirect)Y
+// TODO(nic): check if page boundary is crossed when absoluteX, absoluteY and (indirect)Y
 // and return 1 if so
 size_t nes_exec_lda(NES *nes, word address) {
     (void) address;
     word data_addr = nes_fetch_data_address(nes, address);
     nes->reg_a = nes_read(nes, data_addr);
+    bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_a == 0);
+    bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (nes->reg_a & 0x80) != 0);
     return 0;
 }
 
