@@ -265,23 +265,40 @@ size_t nes_exec_cld(NES *nes, word address) {
     return 0;
 }
 
+typedef struct {
+    Addressing_Mode items[5];
+    size_t count;
+} Addr_Mode_List;
+
+#define mlist(c, ...) (Addr_Mode_List) { .items = {__VA_ARGS__}, .count = c }
+
+// Listen, I know it's madness, but please, let this one slide, thank you and sorry
+bool check_page_cross_x(NES *nes, word addr1, word addr2, Addr_Mode_List list) {
+    for (size_t i = 0; i < list.count; ++i) {
+        if (list.items[i] == nes->addr_mode) {
+            return nes_page_cross(addr1, addr2);
+        }
+    }
+    return false;
+}
+
 size_t nes_exec_lda(NES *nes, word address) {
     word data_addr = nes_fetch_data_address(nes, address);
     nes->reg_a = nes_read(nes, data_addr);
+
     bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_a == 0);
     bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (nes->reg_a & 0x80) != 0);
 
-    switch (nes->addr_mode) {
-        case ADDR_MODE_ABSOLUTE_X:
-        case ADDR_MODE_ABSOLUTE_Y:
-        case ADDR_MODE_INDIRECT_Y: {
-            if (nes_page_cross(address, data_addr)) {
-                return 1;
-            }
-        } break;
-        default: {}
-    }
+    return (size_t) check_page_cross_x(
+        nes,
+        address,
+        data_addr,
+        mlist(3, ADDR_MODE_ABSOLUTE_X, ADDR_MODE_ABSOLUTE_Y, ADDR_MODE_INDIRECT_Y));
+}
 
+size_t nes_exec_sta(NES *nes, word address) {
+    (void) nes;
+    (void) address;
     return 0;
 }
 
