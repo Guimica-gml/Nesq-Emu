@@ -229,6 +229,10 @@ word nes_fetch_data_address(NES *nes, word address) {
     }
 }
 
+bool nes_page_cross(word addr1, word addr2) {
+    return (addr1 & 0xFF00) != (addr2 & 0xFF00);
+}
+
 size_t nes_exec_jmp(NES *nes, word address) {
     nes->reg_pc = nes_fetch_data_address(nes, address);
     return 0;
@@ -261,14 +265,23 @@ size_t nes_exec_cld(NES *nes, word address) {
     return 0;
 }
 
-// TODO(nic): check if page boundary is crossed when absoluteX, absoluteY and (indirect)Y
-// and return 1 if so
 size_t nes_exec_lda(NES *nes, word address) {
-    (void) address;
     word data_addr = nes_fetch_data_address(nes, address);
     nes->reg_a = nes_read(nes, data_addr);
     bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_a == 0);
     bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (nes->reg_a & 0x80) != 0);
+
+    switch (nes->addr_mode) {
+        case ADDR_MODE_ABSOLUTE_X:
+        case ADDR_MODE_ABSOLUTE_Y:
+        case ADDR_MODE_INDIRECT_Y: {
+            if (nes_page_cross(address, data_addr)) {
+                return 1;
+            }
+        } break;
+        default: {}
+    }
+
     return 0;
 }
 
@@ -277,12 +290,13 @@ size_t nes_exec_lda(NES *nes, word address) {
 void nes_exec_next_instruction(NES *nes) {
     word inst_addr = nes->reg_pc;
     byte opcode = nes_read(nes, inst_addr);
+    byte add_cycles = 0;
 
     nes->reg_pc += instruction_sizes[opcode];
     nes->addr_mode = instruction_modes[opcode];
 
     if (instruction_funcs[opcode]) {
-        instruction_funcs[opcode](nes, inst_addr);
+        add_cycles = instruction_funcs[opcode](nes, inst_addr);
     } else {
         fprintf(
             stderr,
@@ -299,6 +313,7 @@ void nes_exec_next_instruction(NES *nes) {
         instruction_names[opcode],
         addr_mode_name(nes->addr_mode));
     printf("Inst cycles: %d\n", instruction_cycles[opcode]);
+    printf("Cycles taken: %d\n", instruction_cycles[opcode] + add_cycles);
     printf("Inst size: %zu\n", instruction_sizes[opcode]);
     printf("--------------\n");
 }
