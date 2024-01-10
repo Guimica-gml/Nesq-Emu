@@ -28,14 +28,6 @@
 typedef uint8_t  byte;
 typedef uint16_t word;
 
-#define SAVE_RAM_CAP     0x2000
-#define MEMORY_CAP       0x0800
-
-#define ZERO_PAGE_OFFSET 0x0000
-#define STACK_OFFSET     0x0100
-#define RAM_OFFSET       0x0200
-#define PRG_ROM_OFFSET   0x8000
-
 typedef enum {
     ADDR_MODE_ABSOLUTE     = 0,
     ADDR_MODE_ABSOLUTE_X   = 1,
@@ -75,14 +67,14 @@ typedef struct {
     byte reg_y;
     byte reg_p;  // Processor status
     Addressing_Mode addr_mode;
-    byte mem[MEMORY_CAP];
+    byte mem[0x800];
     byte io_regs_one[8];
     byte io_regs_two[32];
 
     // Cartridge
     byte *prg;
     byte *chr;
-    byte sram[SAVE_RAM_CAP];
+    byte sram[0x2000];
     byte mapper;
     byte mirror;
     bool battery;
@@ -111,13 +103,25 @@ const char *addr_mode_name(Addressing_Mode addr_mode) {
     }
 }
 
+word solve_mirroring(word address, word block_start, word block_size) {
+    assert(address >= block_start);
+    word w = (address - block_start) % block_size;
+    return address - (block_size * w);
+}
+
 byte nes_read(const NES *nes, word address) {
-    if (address < 0x800) {
-        return nes->mem[address];
+    if (address < 0x1FFF) {
+        word a = solve_mirroring(address, 0x00, 0x800);
+        return nes->mem[a - 0x800];
     }
 
-    if (address >= PRG_ROM_OFFSET) {
-        return nes->prg[address - PRG_ROM_OFFSET];
+    if (address >= 0x2000 && address <= 0x3FFF) {
+        word a = solve_mirroring(address, 0x2000, 0x8);
+        return nes->mem[a - 0x2000];
+    }
+
+    if (address >= 0x8000) {
+        return nes->prg[address - 0x8000];
     }
 
     fprintf(stderr, "Error: not able to read memory from address 0x%X\n", address);
@@ -125,29 +129,33 @@ byte nes_read(const NES *nes, word address) {
 }
 
 void nes_write(NES *nes, word address, byte byte) {
-    if (address < 0x800) {
-        nes->mem[address] = byte;
+    if (address <= 0x1FFF) {
+        word a = solve_mirroring(address, 0x00, 0x800);
+        nes->mem[a - 0x800] = byte;
+    } else if (address >= 0x2000 && address <= 0x3FFF) {
+        word a = solve_mirroring(address, 0x2000, 0x8);
+        nes->mem[a - 0x2000] = byte;
+    } else {
+        fprintf(stderr, "Error: not able to write to memory address 0x%X\n", address);
+        exit(1);
     }
-
-    fprintf(stderr, "Error: not able to write to memory address 0x%X\n", address);
-    exit(1);
 }
 
 void nes_stack_push(NES *nes, byte byte) {
     assert(nes->reg_sp >= 0x00);
-    nes->mem[STACK_OFFSET + (nes->reg_sp--)] = byte;
+    nes->mem[0x100 + (nes->reg_sp--)] = byte;
 }
 
 byte nes_stack_pop(NES *nes) {
     assert(nes->reg_sp <= 0xFF);
-    return nes->mem[STACK_OFFSET + (++nes->reg_sp)];
+    return nes->mem[0x100 + (++nes->reg_sp)];
 }
 
 void nes_stack_print(NES *nes) {
     size_t stack_size = 0xFF - nes->reg_sp;
     printf("Stack:\n");
     for (size_t i = 0; i < stack_size; ++i) {
-        printf("0x%X\n", nes->mem[STACK_OFFSET + 0xFF - i]);
+        printf("0x%X\n", nes->mem[0x100 + 0xFF - i]);
     }
     printf("-----\n");
 }
@@ -233,6 +241,23 @@ bool nes_page_cross(word addr1, word addr2) {
     return (addr1 & 0xFF00) != (addr2 & 0xFF00);
 }
 
+typedef struct {
+    Addressing_Mode items[5];
+    size_t count;
+} Addr_Mode_List;
+
+#define mlist(c, ...) (Addr_Mode_List) { .items = {__VA_ARGS__}, .count = c }
+
+// Listen, I know it's madness, but please, let this one slide, thank you and sorry
+bool check_page_cross_x(NES *nes, word addr1, word addr2, Addr_Mode_List list) {
+    for (size_t i = 0; i < list.count; ++i) {
+        if (list.items[i] == nes->addr_mode) {
+            return nes_page_cross(addr1, addr2);
+        }
+    }
+    return false;
+}
+
 size_t nes_exec_jmp(NES *nes, word address) {
     nes->reg_pc = nes_fetch_data_address(nes, address);
     return 0;
@@ -265,23 +290,6 @@ size_t nes_exec_cld(NES *nes, word address) {
     return 0;
 }
 
-typedef struct {
-    Addressing_Mode items[5];
-    size_t count;
-} Addr_Mode_List;
-
-#define mlist(c, ...) (Addr_Mode_List) { .items = {__VA_ARGS__}, .count = c }
-
-// Listen, I know it's madness, but please, let this one slide, thank you and sorry
-bool check_page_cross_x(NES *nes, word addr1, word addr2, Addr_Mode_List list) {
-    for (size_t i = 0; i < list.count; ++i) {
-        if (list.items[i] == nes->addr_mode) {
-            return nes_page_cross(addr1, addr2);
-        }
-    }
-    return false;
-}
-
 size_t nes_exec_lda(NES *nes, word address) {
     word data_addr = nes_fetch_data_address(nes, address);
     nes->reg_a = nes_read(nes, data_addr);
@@ -296,9 +304,29 @@ size_t nes_exec_lda(NES *nes, word address) {
         mlist(3, ADDR_MODE_ABSOLUTE_X, ADDR_MODE_ABSOLUTE_Y, ADDR_MODE_INDIRECT_Y));
 }
 
+size_t nes_exec_ldx(NES *nes, word address) {
+    word data_addr = nes_fetch_data_address(nes, address);
+    nes->reg_x = nes_read(nes, data_addr);
+
+    bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_x == 0);
+    bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (nes->reg_x & 0x80) != 0);
+
+    return (size_t) check_page_cross_x(
+        nes,
+        address,
+        data_addr,
+        mlist(1, ADDR_MODE_ABSOLUTE_Y));
+}
+
 size_t nes_exec_sta(NES *nes, word address) {
-    (void) nes;
+    word data_addr = nes_fetch_data_address(nes, address);
+    nes_write(nes, data_addr, nes->reg_a);
+    return 0;
+}
+
+size_t nes_exec_txs(NES *nes, word address) {
     (void) address;
+    nes_write(nes, 0x100 + ((word) nes->reg_sp), nes->reg_x);
     return 0;
 }
 
@@ -312,6 +340,13 @@ void nes_exec_next_instruction(NES *nes) {
     nes->reg_pc += instruction_sizes[opcode];
     nes->addr_mode = instruction_modes[opcode];
 
+    printf("Inst addr: 0x%X\n", inst_addr);
+    printf("Op code: 0x%X\n", opcode);
+    printf(
+        "Inst name: %s %s\n",
+        instruction_names[opcode],
+        addr_mode_name(nes->addr_mode));
+
     if (instruction_funcs[opcode]) {
         add_cycles = instruction_funcs[opcode](nes, inst_addr);
     } else {
@@ -323,12 +358,6 @@ void nes_exec_next_instruction(NES *nes) {
         exit(1);
     }
 
-    printf("Inst addr: 0x%X\n", inst_addr);
-    printf("Op code: 0x%X\n", opcode);
-    printf(
-        "Inst name: %s %s\n",
-        instruction_names[opcode],
-        addr_mode_name(nes->addr_mode));
     printf("Inst cycles: %d\n", instruction_cycles[opcode]);
     printf("Cycles taken: %d\n", instruction_cycles[opcode] + add_cycles);
     printf("Inst size: %zu\n", instruction_sizes[opcode]);
