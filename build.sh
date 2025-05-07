@@ -1,13 +1,7 @@
-#!/usr/bin/env sh
+#!/usr/bin/sh
 set -e
 
 CFLAGS="-Wall -Wextra -pedantic -ggdb -std=c11"
-CLIBS=""
+CLIBS="-lraylib -lm"
 
 gcc $CFLAGS -o nesq-emu main.c $CLIBS
-
-if [ "$1" = "run" ]
-then
-    shift
-    ./nesq-emu "$@"
-fi

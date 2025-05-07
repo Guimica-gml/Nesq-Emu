@@ -4,59 +4,65 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <errno.h>
+#include <stdarg.h>
+
+#include <raylib.h>
+
+#define RAYGUI_IMPLEMENTATION
+#include "./raygui.h"
 
 #define ARENA_IMPLEMENTATION
 #include "./arena.h"
 
 #define FILEPATH "./roms/super-mario-bros.nes"
 
-#define array_len(arr) sizeof(arr) / sizeof((arr)[0])
+#define array_len(arr) sizeof(arr) / sizeof(*(arr))
 
-#define bit_set(b, n)    (b) = ((b) | n)
-#define bit_clear(b, n)  (b) = ((b) & ~n)
-#define bit_toggle(b, n) (b) = ((b) ^ n)
+#define bit_set(b, n) (b) = ((b) | (n))
+#define bit_clear(b, n) (b) = ((b) & ~(n))
+#define bit_toggle(b, n) (b) = ((b) ^ (n))
 
-#define bit_set_if(b, n, cond)                  \
-    do {                                        \
-        if (cond) {                             \
-            bit_set(b, n);                      \
-        } else {                                \
-            bit_clear(b, n);                    \
-        }                                       \
+#define bit_set_if(b, n, cond)   \
+    do {                         \
+        if (cond) {              \
+            bit_set((b), (n));   \
+        } else {                 \
+            bit_clear((b), (n)); \
+        }                        \
     } while (0);
 
-// Useful for debugging, can't read hexadecimal
+// Useful for debugging, can't read hexadecimal (skill issue)
 #define BYTE_FMT "%c%c%c%c%c%c%c%c"
-#define BYTE_ARG(b)                      \
-    ((b) & 0x80 ? '1' : '0'),            \
-    ((b) & 0x40 ? '1' : '0'),            \
-    ((b) & 0x20 ? '1' : '0'),            \
-    ((b) & 0x10 ? '1' : '0'),            \
-    ((b) & 0x08 ? '1' : '0'),            \
-    ((b) & 0x04 ? '1' : '0'),            \
-    ((b) & 0x02 ? '1' : '0'),            \
+#define BYTE_ARG(b)           \
+    ((b) & 0x80 ? '1' : '0'), \
+    ((b) & 0x40 ? '1' : '0'), \
+    ((b) & 0x20 ? '1' : '0'), \
+    ((b) & 0x10 ? '1' : '0'), \
+    ((b) & 0x08 ? '1' : '0'), \
+    ((b) & 0x04 ? '1' : '0'), \
+    ((b) & 0x02 ? '1' : '0'), \
     ((b) & 0x01 ? '1' : '0')
 
 typedef uint8_t  byte;
 typedef uint16_t word;
 
 typedef enum {
-    ADDR_MODE_ABSOLUTE     = 0,
-    ADDR_MODE_ABSOLUTE_X   = 1,
-    ADDR_MODE_ABSOLUTE_Y   = 2,
+    ADDR_MODE_ABSOLUTE,
+    ADDR_MODE_ABSOLUTE_X,
+    ADDR_MODE_ABSOLUTE_Y,
 
-    ADDR_MODE_ZERO_PAGE    = 3,
-    ADDR_MODE_ZERO_PAGE_X  = 4,
-    ADDR_MODE_ZERO_PAGE_Y  = 5,
+    ADDR_MODE_ZERO_PAGE,
+    ADDR_MODE_ZERO_PAGE_X,
+    ADDR_MODE_ZERO_PAGE_Y,
 
-    ADDR_MODE_INDIRECT     = 6,
-    ADDR_MODE_INDIRECT_X   = 7,
-    ADDR_MODE_INDIRECT_Y   = 8,
+    ADDR_MODE_INDIRECT,
+    ADDR_MODE_INDIRECT_X,
+    ADDR_MODE_INDIRECT_Y,
 
-    ADDR_MODE_IMPLIED      = 9,
-    ADDR_MODE_RELATIVE     = 10,
-    ADDR_MODE_IMMEDIATE    = 11,
-    ADDR_MODE_ACCUMULATOR  = 12,
+    ADDR_MODE_IMPLIED,
+    ADDR_MODE_RELATIVE,
+    ADDR_MODE_IMMEDIATE,
+    ADDR_MODE_ACCUMULATOR,
 } Addressing_Mode;
 
 typedef enum {
@@ -96,22 +102,22 @@ typedef int (*inst_func)(NES *nes, word address);
 
 const char *addr_mode_name(Addressing_Mode addr_mode) {
     switch (addr_mode) {
-        case ADDR_MODE_ABSOLUTE: return "abs";
-        case ADDR_MODE_ABSOLUTE_X: return "abs,X";
-        case ADDR_MODE_ABSOLUTE_Y: return "abs,Y";
-        case ADDR_MODE_ZERO_PAGE: return "zpg";
-        case ADDR_MODE_ZERO_PAGE_X: return "xpg,X";
-        case ADDR_MODE_ZERO_PAGE_Y: return "xpg,Y";
-        case ADDR_MODE_INDIRECT: return "ind";
-        case ADDR_MODE_INDIRECT_X: return "X,ind";
-        case ADDR_MODE_INDIRECT_Y: return "ind,Y";
-        case ADDR_MODE_RELATIVE: return "rel";
-        case ADDR_MODE_IMPLIED: return "imp";
-        case ADDR_MODE_IMMEDIATE: return "#";
-        case ADDR_MODE_ACCUMULATOR: return "A";
-        default: {
-            assert(0 && "unreachable");
-        }
+    case ADDR_MODE_ABSOLUTE: return "abs";
+    case ADDR_MODE_ABSOLUTE_X: return "abs,X";
+    case ADDR_MODE_ABSOLUTE_Y: return "abs,Y";
+    case ADDR_MODE_ZERO_PAGE: return "zpg";
+    case ADDR_MODE_ZERO_PAGE_X: return "xpg,X";
+    case ADDR_MODE_ZERO_PAGE_Y: return "xpg,Y";
+    case ADDR_MODE_INDIRECT: return "ind";
+    case ADDR_MODE_INDIRECT_X: return "X,ind";
+    case ADDR_MODE_INDIRECT_Y: return "ind,Y";
+    case ADDR_MODE_RELATIVE: return "rel";
+    case ADDR_MODE_IMPLIED: return "imp";
+    case ADDR_MODE_IMMEDIATE: return "#";
+    case ADDR_MODE_ACCUMULATOR: return "A";
+    default: {
+        assert(0 && "unreachable");
+    }
     }
 }
 
@@ -148,6 +154,8 @@ void nes_write(NES *nes, word address, byte byte) {
     } else if (address >= 0x2000 && address <= 0x3FFF) {
         word a = solve_mirroring(address, 0x2000, 0x8);
         nes->io_regs_one[a - 0x2000] = byte;
+    } else if (address >= 0x4000 && address <= 0x4017) {
+        nes->io_regs_two[address - 0x4000] = byte;
     } else {
         fprintf(stderr, "Error: not able to write to memory address 0x%X\n", address);
         exit(1);
@@ -177,97 +185,97 @@ void nes_stack_print(NES *nes) {
 // the data they need is located, can be written to or read from
 word nes_fetch_data_address(NES *nes, word address) {
     switch (nes->addr_mode) {
-        case ADDR_MODE_ABSOLUTE: {
-            word lo = nes_read(nes, address + 1);
-            word hi = nes_read(nes, address + 2);
-            return lo | (hi << 8);
+    case ADDR_MODE_ABSOLUTE: {
+        word lo = nes_read(nes, address + 1);
+        word hi = nes_read(nes, address + 2);
+        return lo | (hi << 8);
+    }
+    case ADDR_MODE_ABSOLUTE_X: {
+        word lo = nes_read(nes, address + 1);
+        word hi = nes_read(nes, address + 2);
+        return (lo | (hi << 8)) + nes->reg_x;
+    }
+    case ADDR_MODE_ABSOLUTE_Y: {
+        word lo = nes_read(nes, address + 1);
+        word hi = nes_read(nes, address + 2);
+        return (lo | (hi << 8)) + nes->reg_y;
+    }
+    case ADDR_MODE_ZERO_PAGE: {
+        return nes_read(nes, nes_read(nes, address + 1));
+    }
+    case ADDR_MODE_ZERO_PAGE_X: {
+        return nes_read(nes, nes_read(nes, address + 1) + nes->reg_x);
+    }
+    case ADDR_MODE_ZERO_PAGE_Y: {
+        return nes_read(nes, nes_read(nes, address + 1) + nes->reg_y);
+    }
+    case ADDR_MODE_INDIRECT: {
+        word lo = nes_read(nes, address + 1);
+        // NOTE(nic): this is here to simulate a bug
+        // in the indirect jmp (0x6C) instruction
+        word hi;
+        if (nes_read(nes, address) == 0x6C && (address & 0xFF) == 0xFF) {
+            hi = nes_read(nes, address + 2);
+        } else {
+            hi = nes_read(nes, address + 1 - 0xFF);
         }
-        case ADDR_MODE_ABSOLUTE_X: {
-            word lo = nes_read(nes, address + 1);
-            word hi = nes_read(nes, address + 2);
-            return (lo | (hi << 8)) + nes->reg_x;
-        }
-        case ADDR_MODE_ABSOLUTE_Y: {
-            word lo = nes_read(nes, address + 1);
-            word hi = nes_read(nes, address + 2);
-            return (lo | (hi << 8)) + nes->reg_y;
-        }
-        case ADDR_MODE_ZERO_PAGE: {
-            return nes_read(nes, address + 1);
-        }
-        case ADDR_MODE_ZERO_PAGE_X: {
-            return nes_read(nes, address + 1) + nes->reg_x;
-        }
-        case ADDR_MODE_ZERO_PAGE_Y: {
-            return nes_read(nes, address + 1) + nes->reg_y;
-        }
-        case ADDR_MODE_INDIRECT: {
-            word lo = nes_read(nes, address + 1);
-            // NOTE(nic): this is here to simulate a bug
-            // in the indirect jmp (0x6C) instruction
-            word hi;
-            if (nes_read(nes, address) == 0x6C && (address & 0xFF) == 0xFF) {
-                hi = nes_read(nes, address + 2);
-            } else {
-                hi = nes_read(nes, address + 1 - 0xFF);
-            }
-            word other = lo | (hi << 8);
-            lo = nes_read(nes, other);
-            hi = nes_read(nes, other + 1);
-            return lo | (hi << 8);
-        }
-        case ADDR_MODE_INDIRECT_X: {
-            word ind = nes_read(nes, address + 1);
-            word a = ind + nes->reg_x;
-            word lo = nes_read(nes, a);
-            word hi = nes_read(nes, a + 1);
-            return lo | (hi << 8);
-        }
-        case ADDR_MODE_INDIRECT_Y: {
-            word a = nes_read(nes, address + 1);
-            word lo = nes_read(nes, a);
-            word hi = nes_read(nes, a + 1);
-            return (lo | (hi << 8)) + nes->reg_y;
-        }
-        case ADDR_MODE_RELATIVE: {
-            word rel = nes_read(nes, address + 1);
-            return nes->reg_pc + rel;
-        }
-        case ADDR_MODE_IMPLIED: {
-            fprintf(stderr, "Error: cannot fetch from addresing mode 'implied'\n");
-            exit(1);
-        }
-        case ADDR_MODE_IMMEDIATE: {
-            return address + 1;
-        }
-        case ADDR_MODE_ACCUMULATOR: {
-            fprintf(stderr, "Error: cannot fetch from addresing mode 'accumulator'\n");
-            exit(1);
-        }
-        default: {
-            assert(0 && "unreachable");
-        }
+        word other = lo | (hi << 8);
+        lo = nes_read(nes, other);
+        hi = nes_read(nes, other + 1);
+        return lo | (hi << 8);
+    }
+    case ADDR_MODE_INDIRECT_X: {
+        word ind = nes_read(nes, address + 1);
+        word a = ind + nes->reg_x;
+        word lo = nes_read(nes, a);
+        word hi = nes_read(nes, a + 1);
+        return lo | (hi << 8);
+    }
+    case ADDR_MODE_INDIRECT_Y: {
+        word a = nes_read(nes, address + 1);
+        word lo = nes_read(nes, a);
+        word hi = nes_read(nes, a + 1);
+        return (lo | (hi << 8)) + nes->reg_y;
+    }
+    case ADDR_MODE_RELATIVE: {
+        int8_t rel = (int8_t) nes_read(nes, address + 1);
+        return (word)(((int32_t) nes->reg_pc) + rel);
+    }
+    case ADDR_MODE_IMPLIED: {
+        fprintf(stderr, "Error: cannot fetch from addresing mode 'implied'\n");
+        exit(1);
+    }
+    case ADDR_MODE_IMMEDIATE: {
+        return address + 1;
+    }
+    case ADDR_MODE_ACCUMULATOR: {
+        fprintf(stderr, "Error: cannot fetch from addresing mode 'accumulator'\n");
+        exit(1);
+    }
+    default:
+        assert(0 && "unreachable");
     }
 }
 
-bool nes_page_cross(word addr1, word addr2) {
-    return (addr1 & 0xFF00) != (addr2 & 0xFF00);
+bool nes_check_page_cross(word a1, word a2) {
+    return (a1 & 0xFF00) != (a2 & 0xFF00);
 }
 
-typedef struct {
-    Addressing_Mode items[5];
-    size_t count;
-} Addr_Mode_List;
+#define nes_check_page_cross_x(nes, a1, a2, ...) \
+    nes_check_page_cross_x_impl(nes, a1, a2, __VA_ARGS__, -1)
 
-#define mlist(c, ...) (Addr_Mode_List) { .items = {__VA_ARGS__}, .count = c }
+bool nes_check_page_cross_x_impl(NES *nes, word a1, word a2, Addressing_Mode am, ...) {
+    va_list addr_modes;
+    va_start(addr_modes, am);
 
-// Listen, I know it's madness, but please, let this one slide, thank you and sorry
-bool check_page_cross_x(NES *nes, word addr1, word addr2, Addr_Mode_List list) {
-    for (size_t i = 0; i < list.count; ++i) {
-        if (list.items[i] == nes->addr_mode) {
-            return nes_page_cross(addr1, addr2);
+    while (am >= 0) {
+        if (am == nes->addr_mode) {
+            return nes_check_page_cross(a1, a2);
         }
+        am = va_arg(addr_modes, Addressing_Mode);
     }
+
+    va_end(addr_modes);
     return false;
 }
 
@@ -287,7 +295,7 @@ int nes_rts(NES *nes, word address) {
     (void) address;
     word lo = nes_stack_pop(nes);
     word hi = nes_stack_pop(nes);
-    nes->reg_pc = lo | (hi << 8);
+    nes->reg_pc = (lo | (hi << 8)) + 1;
     return 0;
 }
 
@@ -310,11 +318,10 @@ int nes_lda(NES *nes, word address) {
     bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_a == 0);
     bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (nes->reg_a & 0x80) != 0);
 
-    return check_page_cross_x(
-        nes,
-        address,
-        data_addr,
-        mlist(3, ADDR_MODE_ABSOLUTE_X, ADDR_MODE_ABSOLUTE_Y, ADDR_MODE_INDIRECT_Y));
+    return nes_check_page_cross_x(
+        nes, address, data_addr,
+        ADDR_MODE_ABSOLUTE_X, ADDR_MODE_ABSOLUTE_Y, ADDR_MODE_INDIRECT_Y
+    );
 }
 
 int nes_ldx(NES *nes, word address) {
@@ -324,11 +331,10 @@ int nes_ldx(NES *nes, word address) {
     bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_x == 0);
     bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (nes->reg_x & 0x80) != 0);
 
-    return check_page_cross_x(
-        nes,
-        address,
-        data_addr,
-        mlist(1, ADDR_MODE_ABSOLUTE_Y));
+    return nes_check_page_cross_x(
+        nes, address, data_addr,
+        ADDR_MODE_ABSOLUTE_Y
+    );
 }
 
 int nes_ldy(NES *nes, word address) {
@@ -338,11 +344,10 @@ int nes_ldy(NES *nes, word address) {
     bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_y == 0);
     bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (nes->reg_y & 0x80) != 0);
 
-    return check_page_cross_x(
-        nes,
-        address,
-        data_addr,
-        mlist(1, ADDR_MODE_ABSOLUTE_X));
+    return nes_check_page_cross_x(
+        nes, address, data_addr,
+        ADDR_MODE_ABSOLUTE_X
+    );
 }
 
 int nes_sta(NES *nes, word address) {
@@ -363,28 +368,44 @@ int nes_txs(NES *nes, word address) {
     return 0;
 }
 
+// NOTE(nic): I'm not sure if these relative addressing mode
+// functions are correct or not, have to fact check it later
+// actually fact check all of them later, I'm not sure of any of it
+
 int nes_bpl(NES *nes, word address) {
     word data_addr = nes_fetch_data_address(nes, address);
     if ((nes->reg_p & STATUS_BIT_NEGATIVE) != 0) {
         nes->reg_pc = data_addr;
+        return nes_check_page_cross(address, data_addr) ? 2 : 1;
     }
-    return nes_page_cross(address, data_addr) ? 2 : 1;
+    return 0;
 }
 
 int nes_bcs(NES *nes, word address) {
     word data_addr = nes_fetch_data_address(nes, address);
     if ((nes->reg_p & STATUS_BIT_CARRY) != 0) {
         nes->reg_pc = data_addr;
+        return nes_check_page_cross(address, data_addr) ? 2 : 1;
     }
-    return nes_page_cross(address, data_addr) ? 2 : 1;
+    return 0;
 }
 
 int nes_bne(NES *nes, word address) {
     word data_addr = nes_fetch_data_address(nes, address);
     if ((nes->reg_p & STATUS_BIT_ZERO) == 0) {
         nes->reg_pc = data_addr;
+        return nes_check_page_cross(address, data_addr) ? 2 : 1;
     }
-    return nes_page_cross(address, data_addr) ? 2 : 1;
+    return 0;
+}
+
+int nes_beq(NES *nes, word address) {
+    word data_addr = nes_fetch_data_address(nes, address);
+    if ((nes->reg_p & STATUS_BIT_ZERO) != 0) {
+        nes->reg_pc = data_addr;
+        return nes_check_page_cross(address, data_addr) ? 2 : 1;
+    }
+    return 0;
 }
 
 int nes_cmp(NES *nes, word address) {
@@ -392,22 +413,21 @@ int nes_cmp(NES *nes, word address) {
     byte data = nes_read(nes, data_addr);
 
     bit_set_if(nes->reg_p, STATUS_BIT_CARRY, nes->reg_a >= data);
-    bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_a == 0);
+    bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_a == data);
     bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (nes->reg_a & 0x80) != 0);
 
-    return check_page_cross_x(
-        nes,
-        address,
-        data_addr,
-        mlist(3, ADDR_MODE_ABSOLUTE_X, ADDR_MODE_ABSOLUTE_Y, ADDR_MODE_INDIRECT_Y));
+    return nes_check_page_cross_x(
+        nes, address, data_addr,
+        ADDR_MODE_ABSOLUTE_X, ADDR_MODE_ABSOLUTE_Y, ADDR_MODE_INDIRECT_Y
+    );
 }
 
 int nes_cpx(NES *nes, word address) {
     word data_addr = nes_fetch_data_address(nes, address);
     byte data = nes_read(nes, data_addr);
 
-    bit_set_if(nes->reg_p, STATUS_BIT_CARRY, nes-> reg_x >= data);
-    bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_x == 0);
+    bit_set_if(nes->reg_p, STATUS_BIT_CARRY, nes->reg_x >= data);
+    bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_x == data);
     bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (nes->reg_x & 0x80) != 0);
     return 0;
 }
@@ -416,8 +436,8 @@ int nes_cpy(NES *nes, word address) {
     word data_addr = nes_fetch_data_address(nes, address);
     byte data = nes_read(nes, data_addr);
 
-    bit_set_if(nes->reg_p, STATUS_BIT_CARRY, nes-> reg_y >= data);
-    bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_y == 0);
+    bit_set_if(nes->reg_p, STATUS_BIT_CARRY, nes->reg_y >= data);
+    bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_y == data);
     bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (nes->reg_y & 0x80) != 0);
     return 0;
 }
@@ -440,7 +460,94 @@ int nes_dey(NES *nes, word address) {
     return 0;
 }
 
-#include "./instructions.def"
+int nes_pha(NES *nes, word address) {
+    (void) address;
+    nes_stack_push(nes, nes->reg_a);
+    return 0;
+}
+
+int nes_inx(NES *nes, word address) {
+    (void) address;
+    nes->reg_x += 1;
+
+    bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_x == 0);
+    bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (nes->reg_x & 0x80) != 0);
+    return 0;
+}
+
+int nes_adc(NES *nes, word address) {
+    word data_addr = nes_fetch_data_address(nes, address);
+    byte data = nes_read(nes, data_addr);
+
+    byte carry = ((nes->reg_p & STATUS_BIT_CARRY) != 0) ? 1 : 0;
+    word result = nes->reg_a + data + carry;
+
+    bit_set_if(nes->reg_p, STATUS_BIT_CARRY, result > 0xFF);
+    bit_set_if(nes->reg_p, STATUS_BIT_ZERO, result == 0);
+    bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (result & 0x80) != 0);
+    bit_set_if(
+        nes->reg_p, STATUS_BIT_OVERFLOW,
+        (result ^ nes->reg_a) & (result ^ data) & 0x80
+    );
+
+    nes->reg_a = result;
+    return nes_check_page_cross_x(
+        nes, address, data_addr,
+        ADDR_MODE_ABSOLUTE_X, ADDR_MODE_ABSOLUTE_Y, ADDR_MODE_INDIRECT_Y
+    );
+}
+
+int nes_ora(NES *nes, word address) {
+    word data_addr = nes_fetch_data_address(nes, address);
+    byte data = nes_read(nes, data_addr);
+
+    byte result = nes->reg_a | data;
+    bit_set_if(nes->reg_p, STATUS_BIT_ZERO, result == 0);
+    bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (result & 0x80) != 0);
+
+    return nes_check_page_cross_x(
+        nes, address, data_addr,
+        ADDR_MODE_ABSOLUTE_X, ADDR_MODE_ABSOLUTE_Y, ADDR_MODE_INDIRECT_Y
+    );
+}
+
+int nes_bit(NES *nes, word address) {
+    word data_addr = nes_fetch_data_address(nes, address);
+    byte data = nes_read(nes, data_addr);
+
+    byte result = nes->reg_a & data;
+    bit_set_if(nes->reg_p, STATUS_BIT_ZERO, result == 0);
+    bit_set_if(nes->reg_p, STATUS_BIT_OVERFLOW, (result & 0x20) != 0);
+    bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (result & 0x80) != 0);
+    return 0;
+}
+
+int nes_iny(NES *nes, word address) {
+    (void) address;
+    nes->reg_y += 1;
+
+    bit_set_if(nes->reg_p, STATUS_BIT_ZERO, nes->reg_y == 0);
+    bit_set_if(nes->reg_p, STATUS_BIT_NEGATIVE, (nes->reg_y & 0x80) != 0);
+    return 0;
+}
+
+int nes_brk(NES *nes, word address) {
+    (void) address;
+
+    word jump_address = address + 2;
+    nes_stack_push(nes, (byte) ((jump_address & 0xFF00) >> 8));
+    nes_stack_push(nes, (byte) ((jump_address & 0x00FF) >> 0));
+
+    byte flags = nes->reg_p;
+    bit_set(flags, STATUS_BIT_INTERRUPT);
+    nes_stack_push(nes, flags);
+
+    bit_set(nes->reg_p, STATUS_BIT_BREAK);
+    nes->reg_pc = 0xFFFE;
+    return 0;
+}
+
+#include "./instructions.c"
 
 void nes_exec_next_instruction(NES *nes) {
     word inst_addr = nes->reg_pc;
@@ -451,12 +558,19 @@ void nes_exec_next_instruction(NES *nes) {
     nes->addr_mode = instruction_modes[opcode];
 
     printf("Inst addr: 0x%X\n", inst_addr);
-    printf("Op code: 0x%X\n", opcode);
+    printf("Op code: 0x%02X\n", opcode);
     printf(
         "Inst name: %s %s\n",
         instruction_names[opcode],
-        addr_mode_name(nes->addr_mode));
+        addr_mode_name(nes->addr_mode)
+    );
     printf("Inst size: %d\n", instruction_sizes[opcode]);
+    printf("-----\n");
+    printf("CPU:\n");
+    printf("A: %d, X: %d, Y: %d\n", nes->reg_a, nes->reg_x, nes->reg_y);
+    printf("P: "BYTE_FMT"\n", BYTE_ARG(nes->reg_p));
+    printf("-----\n");
+    nes_stack_print(nes);
 
     if (instruction_funcs[opcode]) {
         add_cycles = instruction_funcs[opcode](nes, inst_addr);
@@ -467,9 +581,7 @@ void nes_exec_next_instruction(NES *nes) {
         exit(1);
     }
 
-    printf("Inst cycles: %d (+%d)\n", instruction_cycles[opcode], add_cycles);
-    printf("--------------\n");
-    nes_stack_print(nes);
+    printf("Inst cycles: %d (+%d)\n\n", instruction_cycles[opcode], add_cycles);
 }
 
 void read_bytes(void *buffer, size_t count, FILE *stream) {
@@ -578,7 +690,7 @@ NES nes_from_ines_file(const char *filepath, Arena *arena) {
     // Initialize CPU data
     nes.reg_pc = nes_read(&nes, 0xFFFD) * 256 + nes_read(&nes, 0xFFFC);
     nes.reg_sp = 0xFF;
-    nes.reg_p = 0x34; // Is this correct?
+    nes.reg_p = 0x24; // Is this correct?
 
     return nes;
 }
@@ -587,10 +699,20 @@ int main(void) {
     Arena arena = { 0 };
     NES nes = nes_from_ines_file(FILEPATH, &arena);
 
-    for (size_t i = 0; i < 100; ++i) {
+    SetTraceLogLevel(LOG_WARNING);
+    InitWindow(1280, 720, "Nesq-Emu");
+    SetTargetFPS(60);
+
+    while (!WindowShouldClose()) {
+        BeginDrawing();
+        ClearBackground(BLACK);
+
         nes_exec_next_instruction(&nes);
+
+        EndDrawing();
     }
 
     arena_free(&arena);
+    CloseWindow();
     return 0;
 }

@@ -79,20 +79,21 @@ const char *instruction_names[256] = {
 
 // TODO: implement as I write the instructions
 const inst_func instruction_funcs[256] = {
+    nes_brk, nes_ora, NULL   , NULL, NULL   , nes_ora, NULL   , NULL, NULL   , nes_ora, NULL   , NULL, NULL   , nes_ora, NULL   , NULL,
+    nes_bpl, nes_ora, NULL   , NULL, NULL   , nes_ora, NULL   , NULL, NULL   , nes_ora, NULL   , NULL, NULL   , nes_ora, NULL   , NULL,
+    nes_jsr, NULL   , NULL   , NULL, nes_bit, NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, nes_bit, NULL   , NULL   , NULL,
     NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL,
-    nes_bpl, NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL,
-    nes_jsr, NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL,
+    NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, nes_pha, NULL   , NULL   , NULL, nes_jmp, NULL   , NULL   , NULL,
     NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL,
-    NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, nes_jmp, NULL   , NULL   , NULL,
-    NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL,
-    nes_rts, NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, nes_jmp, NULL   , NULL   , NULL,
-    NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, nes_sei, NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL,
+    nes_rts, nes_adc, NULL   , NULL, NULL   , nes_adc, NULL   , NULL, NULL   , nes_adc, NULL   , NULL, nes_jmp, nes_adc, NULL   , NULL,
+    NULL   , nes_adc, NULL   , NULL, NULL   , nes_adc, NULL   , NULL, nes_sei, nes_adc, NULL   , NULL, NULL   , nes_adc, NULL   , NULL,
     NULL   , nes_sta, NULL   , NULL, NULL   , nes_sta, nes_stx, NULL, nes_dey, NULL   , NULL   , NULL, NULL   , nes_sta, nes_stx, NULL,
     NULL   , nes_sta, NULL   , NULL, NULL   , nes_sta, nes_stx, NULL, NULL   , nes_sta, nes_txs, NULL, NULL   , nes_sta, NULL   , NULL,
     nes_ldy, nes_lda, nes_ldx, NULL, nes_ldy, nes_lda, nes_ldx, NULL, NULL   , nes_lda, NULL   , NULL, nes_ldy, nes_lda, nes_ldx, NULL,
     nes_bcs, nes_lda, NULL   , NULL, nes_ldy, nes_lda, nes_ldx, NULL, NULL   , nes_lda, NULL   , NULL, nes_ldy, nes_lda, nes_ldx, NULL,
-    nes_cpy, nes_cmp, NULL   , NULL, nes_cpy, nes_cmp, NULL   , NULL, NULL   , nes_cmp, nes_dex, NULL, nes_cpy, nes_cmp, NULL   , NULL,
+    nes_cpy, nes_cmp, NULL   , NULL, nes_cpy, nes_cmp, NULL   , NULL, nes_iny, nes_cmp, nes_dex, NULL, nes_cpy, nes_cmp, NULL   , NULL,
     nes_bne, nes_cmp, NULL   , NULL, NULL   , nes_cmp, NULL   , NULL, nes_cld, nes_cmp, NULL   , NULL, NULL   , nes_cmp, NULL   , NULL,
-    nes_cpx, NULL   , NULL   , NULL, nes_cpx, NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, nes_cpx, NULL   , NULL   , NULL,
-    NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL,
+    nes_cpx, NULL   , NULL   , NULL, nes_cpx, NULL   , NULL   , NULL, nes_inx, NULL   , NULL   , NULL, nes_cpx, NULL   , NULL   , NULL,
+    nes_beq, NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL, NULL   , NULL   , NULL   , NULL,
 };
+
